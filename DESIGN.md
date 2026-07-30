@@ -376,6 +376,11 @@ scripts: `scripts/get_refresh_token.py` (one-time local consent → refresh toke
   `ValidationError` (Pydantic), extractor/`soffice` errors.
 - Claude output failing `Recipe` validation → one bounded retry with the error fed back,
   then FAILED.
+- **Not a recipe:** the parser offers a `not_a_recipe` tool alongside `save_recipe`
+  (`tool_choice: "any"`). If Claude judges the input isn't a recipe (invoice, notes, garbage,
+  or absurdly long text), it's `REJECTED` and moved to `rejected/` — so it's never filed as a
+  fake recipe and never re-parsed on later runs (which would waste tokens). Distinct from
+  FAILED, which leaves the file queued for retry.
 - **Move happens only after a confirmed upload** (see §3.3 edge case).
 - Exit code = number of FAILED files (0 = clean), so CI surfaces problems.
 

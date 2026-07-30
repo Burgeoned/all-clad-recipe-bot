@@ -30,6 +30,7 @@ WORKING_SUBFOLDER = "claude"          # working folders may live here or at root
 TEMPLATE_NAME = "recipe_template.docx"  # matched case-insensitively
 INPUT_FOLDER_NAME = "recipes_to_input"
 COMPLETED_FOLDER_NAME = "completed"
+REJECTED_FOLDER_NAME = "rejected"     # non-recipes land here (auto-created)
 
 # A recipe file is small text/pdf/docx. Anything larger is almost certainly a mistake;
 # skip it rather than pull megabytes into memory and pay to send it to Claude.
@@ -78,12 +79,12 @@ class DriveClient:
         if template_id is None:
             raise DriveError(f"Template '{TEMPLATE_NAME}' not found directly under the root folder.")
 
-        input_id, completed_id = self._resolve_working_folders(root_children)
+        input_id, completed_id, rejected_id = self._resolve_working_folders(root_children)
 
-        # Sanity guard: input, completed, and every category folder must be distinct.
-        # If two resolve to the same id (a misnamed/duplicate folder), a "move to completed"
-        # could land somewhere unexpected — fail loudly instead.
-        folder_ids = [input_id, completed_id, *category_folders.values()]
+        # Sanity guard: input, completed, rejected, and every category folder must be distinct.
+        # If two resolve to the same id (a misnamed/duplicate folder), a "move" could land
+        # somewhere unexpected — fail loudly instead.
+        folder_ids = [input_id, completed_id, rejected_id, *category_folders.values()]
         if len(set(folder_ids)) != len(folder_ids):
             raise DriveError(
                 "Resolved drive folders are not all distinct — check for duplicate or "
@@ -93,25 +94,34 @@ class DriveClient:
         return DriveLayout(
             input_folder_id=input_id,
             completed_folder_id=completed_id,
+            rejected_folder_id=rejected_id,
             category_folders=category_folders,
             template_file_id=template_id,
         )
 
-    def _resolve_working_folders(self, root_children: list[dict]) -> tuple[str, str]:
-        """recipes_to_input + completed live at root or inside a `claude/` subfolder."""
+    def _resolve_working_folders(self, root_children: list[dict]) -> tuple[str, str, str]:
+        """recipes_to_input + completed + rejected live at root or inside a `claude/` subfolder.
+        input and completed must already exist; rejected is auto-created next to completed."""
         input_id = self._find_folder(root_children, INPUT_FOLDER_NAME)
         completed_id = self._find_folder(root_children, COMPLETED_FOLDER_NAME)
-        if input_id is None or completed_id is None:
+        rejected_id = self._find_folder(root_children, REJECTED_FOLDER_NAME)
+        working_parent = self._root
+        if input_id is None or completed_id is None or rejected_id is None:
             working_id = self._find_folder(root_children, WORKING_SUBFOLDER)
             if working_id is not None:
+                working_parent = working_id
                 working_children = self._children(working_id)
                 input_id = input_id or self._find_folder(working_children, INPUT_FOLDER_NAME)
                 completed_id = completed_id or self._find_folder(working_children, COMPLETED_FOLDER_NAME)
+                rejected_id = rejected_id or self._find_folder(working_children, REJECTED_FOLDER_NAME)
         if input_id is None:
             raise DriveError(f"'{INPUT_FOLDER_NAME}' folder not found (root or {WORKING_SUBFOLDER}/).")
         if completed_id is None:
             raise DriveError(f"'{COMPLETED_FOLDER_NAME}' folder not found (root or {WORKING_SUBFOLDER}/).")
-        return input_id, completed_id
+        # Create rejected/ alongside completed if it doesn't exist yet.
+        if rejected_id is None:
+            rejected_id = self._create_folder(REJECTED_FOLDER_NAME, working_parent)
+        return input_id, completed_id, rejected_id
 
     # --- reads ---------------------------------------------------------------------
 
@@ -155,11 +165,18 @@ class DriveClient:
         return docx_id
 
     def move_to_completed(self, file_id: str, completed_folder_id: str) -> None:
-        """Reparent a source file into completed/, removing it from wherever it was."""
+        """Reparent a processed source into completed/."""
+        self._reparent(file_id, completed_folder_id)
+
+    def move_to_rejected(self, file_id: str, rejected_folder_id: str) -> None:
+        """Reparent a non-recipe source into rejected/ (out of the input queue)."""
+        self._reparent(file_id, rejected_folder_id)
+
+    def _reparent(self, file_id: str, dest_folder_id: str) -> None:
         current = self._service.files().get(fileId=file_id, fields="parents").execute()
         self._service.files().update(
             fileId=file_id,
-            addParents=completed_folder_id,
+            addParents=dest_folder_id,
             removeParents=",".join(current.get("parents", [])),
             fields="id",
         ).execute()

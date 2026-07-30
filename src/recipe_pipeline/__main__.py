@@ -37,12 +37,17 @@ def main() -> int:
         return 2
 
     processed = sum(1 for r in results if r.status is Status.PROCESSED)
+    rejected = sum(1 for r in results if r.status is Status.REJECTED)
     failed = [r for r in results if r.status is Status.FAILED]
     mode = " (dry-run)" if settings.dry_run else ""
-    logger.info("Done%s: %d processed, %d failed.", mode, processed, len(failed))
+    logger.info(
+        "Done%s: %d processed, %d rejected (not a recipe), %d failed.",
+        mode, processed, rejected, len(failed),
+    )
     for result in failed:
         logger.error("  FAILED %s: %s", result.source_name, result.error)
 
+    # Rejected files are set aside, not errors — exit code reflects real failures only.
     return len(failed)
 
 

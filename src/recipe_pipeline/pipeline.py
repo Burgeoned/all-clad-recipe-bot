@@ -16,7 +16,7 @@ from .config import Settings
 from .drive_client import DriveClient, DriveError
 from .extractors import ExtractionError, extract_text
 from .models import DriveLayout, ProcessResult, SourceFile, Status
-from .parser import ParseError, parse_recipe
+from .parser import NotARecipeError, ParseError, parse_recipe
 from .renderer import RenderError, render
 from .ssl_support import use_system_trust_store
 
@@ -72,6 +72,15 @@ def _process_one(
         client.move_to_completed(source.file_id, layout.completed_folder_id)
         logger.info("Processed %s -> %s/%s.docx", source.name, recipe.category.value, base_name)
         return ProcessResult(source.name, Status.PROCESSED, recipe.category, output_id)
+
+    except NotARecipeError as exc:
+        # Not a recipe: set it aside so it isn't filed as one and isn't retried every day.
+        if settings.dry_run:
+            logger.info("[dry-run] %s: not a recipe (%s) — would move to rejected/", source.name, exc)
+        else:
+            client.move_to_rejected(source.file_id, layout.rejected_folder_id)
+            logger.warning("Rejected (not a recipe): %s — %s; moved to rejected/", source.name, exc)
+        return ProcessResult(source.name, Status.REJECTED, error=str(exc))
 
     except _FILE_ERRORS as exc:
         logger.error("Failed to process %s: %s", source.name, exc)

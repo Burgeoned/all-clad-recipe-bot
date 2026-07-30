@@ -1,7 +1,7 @@
 import pytest
 
 from recipe_pipeline.config import Settings
-from recipe_pipeline.parser import MAX_INPUT_CHARS, ParseError, parse_recipe
+from recipe_pipeline.parser import MAX_INPUT_CHARS, NotARecipeError, ParseError, parse_recipe
 
 
 def _settings() -> Settings:
@@ -22,7 +22,8 @@ def test_parser_rejects_empty_text_without_api_call():
 
 
 def test_parser_rejects_oversized_text_without_api_call():
-    with pytest.raises(ParseError):
+    # Absurdly long input is treated as "not a recipe" (set aside, not a hard error).
+    with pytest.raises(NotARecipeError):
         parse_recipe("x" * (MAX_INPUT_CHARS + 1), "huge.txt", _settings())
 
 

@@ -34,8 +34,9 @@ class FileType(str, Enum):
 
 
 class Status(str, Enum):
-    PROCESSED = "processed"
-    FAILED = "failed"
+    PROCESSED = "processed"   # parsed, rendered, filed
+    REJECTED = "rejected"     # not a recipe — moved to rejected/, not filed
+    FAILED = "failed"         # transient error — left in the input queue to retry
 
 
 # --------------------------------------------------------------------------------------
@@ -118,6 +119,7 @@ class DriveLayout:
 
     input_folder_id: str                    # recipes_to_input
     completed_folder_id: str                # completed
+    rejected_folder_id: str                 # rejected (auto-created); non-recipes land here
     category_folders: dict[Category, str]   # includes OTHER (auto-created if missing)
     template_file_id: str                   # recipe_template.docx
 

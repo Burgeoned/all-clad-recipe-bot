@@ -18,6 +18,7 @@ from .models import Recipe
 # Non-streaming: recipes are small, well under the ~16k token timeout threshold.
 MAX_TOKENS = 8192
 TOOL_NAME = "save_recipe"
+REJECT_TOOL_NAME = "not_a_recipe"
 MAX_ATTEMPTS = 2
 # A recipe is at most a few thousand characters. Far beyond that isn't a recipe — refuse
 # rather than pay to send a novel to the model.
@@ -25,10 +26,14 @@ MAX_INPUT_CHARS = 100_000
 
 SYSTEM_PROMPT = """You extract structured data from a recipe and classify it.
 
-You are given the raw text of a single recipe (from a .txt, .pdf, or .docx file). Call the \
-`save_recipe` tool exactly once with the structured recipe.
+You are given the raw text of a file dropped into a recipes folder. First decide whether it \
+is actually a recipe. If it is NOT a recipe — e.g. an invoice, a letter, an essay, a grocery \
+list, notes, or unreadable/garbage text — call the `not_a_recipe` tool with a short reason and \
+stop. Do NOT invent a recipe from non-recipe text. Only if it IS a recipe, call `save_recipe` \
+exactly once with the structured recipe. A messy or informal recipe still counts as a recipe; \
+only reject things that clearly are not recipes at all.
 
-Rules:
+Rules for `save_recipe`:
 - Extract only what the source states. Do not invent ingredients, steps, times, or nutrition. \
 Omit / use null for any field the source does not provide (e.g. leave nutrition fields null if \
 the source has no nutrition info).
@@ -48,30 +53,46 @@ dessert is dessert, not beef. When a savory main has no clear meat, use other.""
 
 
 class ParseError(Exception):
-    """Raised when Claude cannot produce a valid structured recipe."""
+    """Raised when Claude cannot produce a valid structured recipe (a real error)."""
+
+
+class NotARecipeError(Exception):
+    """Raised when Claude determines the input isn't a recipe at all. Not an error — the
+    file should be set aside, not retried."""
 
 
 def parse_recipe(raw_text: str, source_filename: str, settings: Settings) -> Recipe:
     """Parse + classify recipe text into a validated `Recipe`.
 
-    Raises ParseError on an API failure, a safety refusal, a missing tool call, or output
-    that still doesn't validate after one retry.
+    Raises NotARecipeError if the text clearly isn't a recipe; ParseError on an API failure,
+    a safety refusal, a missing tool call, or output that still doesn't validate after one retry.
     """
     if not raw_text.strip():
         raise ParseError(f"{source_filename} has no extractable text.")
     if len(raw_text) > MAX_INPUT_CHARS:
-        raise ParseError(
-            f"{source_filename} is too long ({len(raw_text)} chars) to be a recipe; skipped."
+        raise NotARecipeError(
+            f"{source_filename} is too long ({len(raw_text)} chars) to be a recipe."
         )
 
     client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
-    tool = {
-        "name": TOOL_NAME,
-        "description": "Record the fully structured, categorized recipe from the source text.",
-        "input_schema": Recipe.model_json_schema(),
-    }
+    tools = [
+        {
+            "name": TOOL_NAME,
+            "description": "Record the fully structured, categorized recipe from the source text.",
+            "input_schema": Recipe.model_json_schema(),
+        },
+        {
+            "name": REJECT_TOOL_NAME,
+            "description": "Use when the text is NOT a recipe (invoice, letter, notes, garbage, etc.).",
+            "input_schema": {
+                "type": "object",
+                "properties": {"reason": {"type": "string", "description": "Why it isn't a recipe."}},
+                "required": ["reason"],
+            },
+        },
+    ]
     messages: list[dict] = [
-        {"role": "user", "content": f"Source filename: {source_filename}\n\nRecipe text:\n{raw_text}"}
+        {"role": "user", "content": f"Source filename: {source_filename}\n\nFile text:\n{raw_text}"}
     ]
 
     last_error: ValidationError | None = None
@@ -82,14 +103,21 @@ def parse_recipe(raw_text: str, source_filename: str, settings: Settings) -> Rec
                 max_tokens=MAX_TOKENS,
                 system=SYSTEM_PROMPT,
                 messages=messages,
-                tools=[tool],
-                tool_choice={"type": "tool", "name": TOOL_NAME},
+                tools=tools,
+                tool_choice={"type": "any"},  # must call save_recipe OR not_a_recipe
             )
         except anthropic.APIError as exc:
             raise ParseError(f"Claude API error while parsing {source_filename}: {exc}") from exc
 
         if response.stop_reason == "refusal":
             raise ParseError(f"Claude refused to parse {source_filename}.")
+
+        reject = next(
+            (b for b in response.content if b.type == "tool_use" and b.name == REJECT_TOOL_NAME), None
+        )
+        if reject is not None:
+            reason = reject.input.get("reason", "not a recipe") if isinstance(reject.input, dict) else "not a recipe"
+            raise NotARecipeError(f"{source_filename}: {reason}")
 
         tool_use = next(
             (b for b in response.content if b.type == "tool_use" and b.name == TOOL_NAME), None

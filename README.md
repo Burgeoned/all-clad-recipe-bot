@@ -18,6 +18,9 @@ recipes_to_input/  →  extract text  →  Claude (parse + classify)  →  fill 
   (`breakfast` / `beef` / `dessert` / `pork` / `poultry` / `seafood` / `other`).
 - **Idempotent by design:** a processed source is moved to `completed/`, so the input folder
   is always the work queue. Re-running is safe and produces no duplicates.
+- **Not-a-recipe aware:** Claude can decline files that aren't recipes (invoices, notes,
+  garbage). They're moved to `rejected/` — never filed as a fake recipe, and never
+  re-processed (which would waste tokens every run).
 - **Safe by design:** never deletes or overwrites anything, uploads are create-only, the bot
   account can only see the one shared folder, and each file is processed in isolation so one
   bad file never affects the others.
@@ -34,12 +37,14 @@ The pipeline resolves everything by name under a single root folder (`ROOT_FOLDE
 ├── other/                     (auto-created if missing)
 ├── claude/
 │   ├── recipes_to_input/       ← drop recipe files here
-│   └── completed/              ← sources move here after processing
+│   ├── completed/              ← sources move here after processing
+│   └── rejected/               ← non-recipes move here (auto-created)
 └── recipe_template.docx        ← the template that gets filled
 ```
 
-`recipes_to_input/` and `completed/` may live either directly under the root or inside a
-`claude/` subfolder — the resolver handles both.
+The working folders (`recipes_to_input/`, `completed/`, `rejected/`) may live either directly
+under the root or inside a `claude/` subfolder — the resolver handles both. `rejected/` is
+created automatically the first time it's needed.
 
 ## Setup
 
