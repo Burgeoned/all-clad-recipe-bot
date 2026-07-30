@@ -18,6 +18,11 @@ recipes_to_input/  →  extract text  →  Claude (parse + classify)  →  fill 
   (`breakfast` / `beef` / `dessert` / `pork` / `poultry` / `seafood` / `other`).
 - **Idempotent by design:** a processed source is moved to `completed/`, so the input folder
   is always the work queue. Re-running is safe and produces no duplicates.
+- **Macros computed + validated:** if the source has no nutrition, Claude estimates
+  per-serving macros from the ingredients (marked "estimated" in the doc). Every recipe is
+  sanity-checked — the model flags implausible food amounts / cook times, and a deterministic
+  check verifies calories ≈ 4·protein + 4·carbs + 9·fat and that values sit in sane ranges.
+  Any concerns show up as ⚠ notes in the doc and in the log.
 - **Not-a-recipe aware:** Claude can decline files that aren't recipes (invoices, notes,
   garbage). They're moved to `rejected/` — never filed as a fake recipe, and never
   re-processed (which would waste tokens every run).

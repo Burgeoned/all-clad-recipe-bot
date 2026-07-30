@@ -14,6 +14,7 @@ from pydantic import ValidationError
 
 from .config import Settings
 from .models import Recipe
+from .validation import check_macros
 
 # Non-streaming: recipes are small, well under the ~16k token timeout threshold.
 MAX_TOKENS = 8192
@@ -41,14 +42,20 @@ and stop. Do NOT invent a recipe from non-recipe text. Only if it IS a recipe, c
 things that clearly are not recipes at all.
 
 Rules for `save_recipe`:
-- Extract only what the source states. Do not invent ingredients, steps, times, or nutrition. \
-Omit / use null for any field the source does not provide (e.g. leave nutrition fields null if \
-the source has no nutrition info).
+- Extract ingredients, steps, times, and metadata only from what the source states. Do not \
+invent them; use null / omit anything the source does not provide.
 - Times are integers in minutes. Convert "1 hr 30 min" to 90. If a time isn't given, use null.
 - `steps` is an ordered list; each entry is one instruction, in cooking order.
 - Preserve ingredient sub-groups only if the recipe clearly has them (e.g. "For the sauce", \
 "For the dough"); otherwise use a single group with heading = null.
 - `substitutions` and `tips` capture any swap notes / pro-tips / variations the source mentions.
+- Nutrition: if the source states per-serving nutrition, copy it and set `nutrition_estimated` \
+= false. If it does NOT, ESTIMATE reasonable per-serving calories, protein, carbs, fat, fiber, \
+and sodium from the ingredient quantities divided by the number of servings, and set \
+`nutrition_estimated` = true. Always fill nutrition one way or the other.
+- `warnings`: note any sanity concerns — the total amount of food seems too much or too little \
+for the stated servings, cook times or temperatures seem implausible, or the macros look \
+unreasonable for the ingredients. Keep each concise. Leave the list empty if all looks fine.
 
 Classify the recipe into exactly one `category`:
 - breakfast: breakfast/brunch dishes regardless of protein
@@ -161,7 +168,11 @@ def parse_recipe(raw_text: str, source_filename: str, settings: Settings) -> Rec
             })
             continue
 
-        # Provenance is ours to set, not the model's — guarantee it matches the real file.
-        return recipe.model_copy(update={"source_filename": source_filename})
+        # Provenance is ours to set; also fold in our own deterministic macro warnings on
+        # top of any the model raised.
+        all_warnings = list(recipe.warnings) + check_macros(recipe.nutrition)
+        return recipe.model_copy(
+            update={"source_filename": source_filename, "warnings": all_warnings}
+        )
 
     raise ParseError(f"Recipe from {source_filename} failed validation after retry: {last_error}")

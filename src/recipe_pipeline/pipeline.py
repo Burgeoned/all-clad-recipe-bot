@@ -56,6 +56,8 @@ def _process_one(
     try:
         text = extract_text(source)
         recipe = parse_recipe(text, source.name, settings)
+        if recipe.warnings:
+            logger.warning("%s flagged: %s", source.name, " | ".join(recipe.warnings))
         docs = render(recipe, template, settings)
         base_name = _safe_base_name(recipe.title) or _stem(source.name)
         folder_id = layout.category_folders[recipe.category]

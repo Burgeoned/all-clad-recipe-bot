@@ -102,10 +102,20 @@ def _fill_metadata(document: DocxDocument, recipe: Recipe) -> None:
 
 
 def _fill_list_sections(document: DocxDocument, recipe: Recipe) -> None:
-    _fill_list_between(document, "Substitutions & Notes", "EQUIPMENT", recipe.substitutions)
+    _fill_list_between(document, "Substitutions & Notes", "EQUIPMENT", _substitutions_and_notes(recipe))
     _fill_list_between(document, "EQUIPMENT", "INSTRUCTIONS", recipe.equipment)
     _fill_list_between(document, "INSTRUCTIONS", "TIPS & VARIATIONS", recipe.steps)
     _fill_list_between(document, "TIPS & VARIATIONS", "NUTRITION", recipe.tips)
+
+
+def _substitutions_and_notes(recipe: Recipe) -> list[str]:
+    """The 'Substitutions & Notes' block also carries the estimation marker and any warnings,
+    so they're visible in the doc rather than buried in a log."""
+    notes = list(recipe.substitutions)
+    if recipe.nutrition_estimated:
+        notes.append("Nutrition is estimated from the ingredients (approximate).")
+    notes.extend(f"⚠ {warning}" for warning in recipe.warnings)
+    return notes
 
 
 def _fill_list_between(

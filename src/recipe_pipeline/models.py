@@ -90,6 +90,13 @@ class Recipe(BaseModel):
     steps: list[str] = Field(..., description="Ordered; each entry is one instruction")
     tips: list[str] = Field(default_factory=list, description="Tips & variations")
     nutrition: Nutrition | None = None
+    nutrition_estimated: bool = Field(
+        False, description="True if the macros were estimated (source had none), not stated."
+    )
+    warnings: list[str] = Field(
+        default_factory=list,
+        description="Sanity concerns about the recipe or its macros; empty if all looks fine.",
+    )
     # --- provenance (not user content) ---
     source_filename: str
 
