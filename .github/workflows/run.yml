@@ -1,0 +1,43 @@
+name: recipe-pipeline
+
+on:
+  schedule:
+    # Daily at 13:00 UTC. Recipes are sparse, so once a day is plenty.
+    - cron: "0 13 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run (parse + render, no Drive writes)"
+        type: boolean
+        default: false
+
+# Never run two pipeline instances against the same drive at once.
+concurrency:
+  group: recipe-pipeline
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install LibreOffice (for docx -> pdf export)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libreoffice-writer
+
+      - name: Install package
+        run: pip install -e .
+
+      - name: Run pipeline
+        env:
+          GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
+          GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+          GOOGLE_OAUTH_REFRESH_TOKEN: ${{ secrets.GOOGLE_OAUTH_REFRESH_TOKEN }}
+          ROOT_FOLDER_ID: ${{ secrets.ROOT_FOLDER_ID }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          DRY_RUN: ${{ inputs.dry_run && '1' || '0' }}
+        run: python -m recipe_pipeline

@@ -1,0 +1,31 @@
+[project]
+name = "recipe-pipeline"
+version = "0.1.0"
+description = "Watch a Google Drive folder, parse + categorize recipes with Claude, fill a docx template, and file the result back by category."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+dependencies = [
+    "google-api-python-client>=2.0",
+    "google-auth>=2.0",
+    "anthropic>=0.40",
+    "pydantic>=2.0",
+    "pypdf>=4.0",
+    "python-docx>=1.1",
+    "truststore>=0.9",   # verify TLS via the OS trust store (corporate proxy support; no-op elsewhere)
+]
+
+[project.optional-dependencies]
+# One-time local OAuth consent (scripts/get_refresh_token.py); not needed at runtime/CI.
+auth = ["google-auth-oauthlib>=1.0"]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+recipe-pipeline = "recipe_pipeline.__main__:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/recipe_pipeline"]

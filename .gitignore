@@ -1,0 +1,24 @@
+# Secrets — never commit
+.env
+client_secret*.json
+credentials*.json
+token*.json
+*.apps.googleusercontent.com.json
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+
+# Local outputs / scratch
+output/
+scratch/
+
+# Local dev-only assets (real Drive content — not for the public repo)
+.dev/
